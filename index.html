@@ -1,0 +1,596 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Player YouTube + eventos</title>
+  <style>
+    :root{--gap:10px;--radius:10px;--border:#d0d7de;--bg:#fff;--fg:#111;--muted:#555;--blue:#0969da;--green:#1f883d}
+    *{box-sizing:border-box}
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;margin:0;padding:12px;background:var(--bg);color:var(--fg)}
+    .wrap{max-width:1360px;margin:0 auto}
+    .card,.panel{border:1px solid var(--border);border-radius:var(--radius);padding:12px;background:#fff}
+    .row{display:flex;gap:var(--gap);align-items:center;flex-wrap:wrap}
+    .small{font-size:12px;color:var(--muted)}
+    .mono{font-variant-numeric:tabular-nums;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+    button,input,select{font:inherit}
+    button{border:1px solid var(--border);background:#f6f8fa;padding:8px 10px;border-radius:10px;cursor:pointer;user-select:none;white-space:nowrap}
+    button.primary{background:var(--blue);color:#fff;border-color:var(--blue)}
+    button.sel{background:var(--blue);color:#fff;border-color:var(--blue)}
+    button.running{background:var(--green);color:#fff;border-color:var(--green)}
+    button:disabled{opacity:.5;cursor:not-allowed}
+    .ytWrap{width:100%;border-radius:var(--radius);overflow:hidden;background:#000;border:1px solid var(--border);margin-top:10px}
+    .ytAspect{position:relative;width:100%;aspect-ratio:16/9;background:#000}
+    #ytPlayer{position:absolute;inset:0;width:100%;height:100%;border:0}
+    .fixedVideoLine{padding:7px 10px;border:1px solid var(--border);border-radius:999px;background:#fbfbfb;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .actions{margin-top:10px;border:1px solid var(--border);border-radius:var(--radius);padding:10px;background:#fff}
+    .titleBar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+    .btnGrid{display:grid;grid-template-columns:repeat(6,minmax(120px,1fr));gap:10px;align-items:stretch;margin-top:10px}
+    .btnGrid .cell{display:flex;gap:8px;align-items:center;min-width:0}
+    .btnGrid button{width:100%;text-align:left}
+    .wideCell{grid-column:span 3}
+    .synthNavWrap{display:flex;gap:6px;align-items:center;width:100%;min-width:0;flex-wrap:wrap}
+    .synthNavBtn{flex:0 0 auto;width:38px!important;text-align:center!important;padding:8px 0!important;min-height:42px}
+    .statsWrap{display:flex;gap:6px;align-items:stretch;flex-wrap:wrap}
+    .statBox{min-width:108px;border:1px solid var(--border);border-radius:10px;background:#fbfbfb;padding:6px 10px;line-height:1.15;white-space:nowrap}
+    .statBox .label{font-size:11px;color:var(--muted);margin-bottom:3px}
+    .statBox .value{font-size:13px;font-weight:700;font-variant-numeric:tabular-nums;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+    .timebox{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:10px;border:1px solid var(--border);border-radius:var(--radius);background:#fbfbfb;margin-top:10px}
+    .timebox label{display:flex;gap:6px;align-items:center;color:var(--muted)}
+    .timebox input[type="number"],.timebox input[type="text"]{padding:6px 8px;border:1px solid var(--border);border-radius:10px}
+    .timebox input[type="number"]{width:82px}
+    #absTime{width:148px;font-variant-numeric:tabular-nums;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+    .metricRow{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+    .miniMetricBox{border:1px solid var(--border);border-radius:10px;padding:6px 8px;background:#fff;display:flex;align-items:center;gap:4px;white-space:nowrap;min-height:36px}
+    .miniMetricBox .metricValue{font-weight:700;font-variant-numeric:tabular-nums;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+    .tableWrap{overflow-x:auto}
+    table{width:100%;border-collapse:collapse;font-size:13px}
+    th,td{border:1px solid var(--border);padding:6px 8px;text-align:left;vertical-align:top;white-space:nowrap}
+    th{background:#f6f8fa}
+    tr.currentEvent td{font-weight:700!important;background:#fff8c5}
+    tr.clickableRow{cursor:pointer}
+    .playRowBtn{border:1px solid var(--border);background:#f6f8fa;padding:4px 8px;border-radius:10px;cursor:pointer;line-height:1}
+    .pill{display:inline-block;padding:2px 8px;border:1px solid var(--border);border-radius:999px;margin-right:6px;background:#fff}
+    .log{white-space:pre-wrap;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;color:#333}
+    @media(max-width:900px){.btnGrid{grid-template-columns:repeat(2,minmax(130px,1fr))}.wideCell{grid-column:span 2}}
+  </style>
+</head>
+
+<body>
+<div class="wrap">
+  <div class="card">
+    <div class="row" style="justify-content:space-between">
+      <div class="row">
+        <button id="play" class="primary" disabled>▶︎ Reproducir</button>
+        <button id="pause" disabled>⏸︎ Pausa</button>
+        <button id="stop" disabled>⏹︎ Stop</button>
+        <button id="slowmo" disabled>🐢 Slow Motion 0,5×</button>
+        <label class="small">Velocidad:
+          <select id="rate" disabled>
+            <option value="0.25">0.25×</option>
+            <option value="0.5">0.5×</option>
+            <option value="1" selected>1×</option>
+            <option value="1.5">1.5×</option>
+            <option value="2">2×</option>
+          </select>
+        </label>
+      </div>
+      <div class="fixedVideoLine small"><b>Vídeo:</b> https://youtu.be/kONs8pA53jU</div>
+    </div>
+
+    <div class="ytWrap"><div class="ytAspect"><div id="ytPlayer"></div></div></div>
+
+    <div class="actions">
+      <div class="titleBar">
+        <div class="small"><b>Filtros / visualizador</b></div>
+        <div class="small"><i id="teamsDisplay">—</i></div>
+      </div>
+
+      <div class="btnGrid">
+        <div class="cell"><button id="bEquipo" disabled>Equipo: —</button></div>
+        <div class="cell"><button id="bResultado" disabled>Resultado: —</button></div>
+        <div class="cell"><button id="bFase" disabled>Fase: —</button></div>
+        <div class="cell"><button id="bError" disabled>Error: —</button></div>
+        <div class="cell"><button id="bTipo" disabled>Tipo: —</button></div>
+        <div class="cell"><button id="bLado" disabled>Lado: —</button></div>
+
+        <div class="cell"><button id="resetTags" disabled>⚪ Reset filtros</button></div>
+        <div class="cell"><button id="visualizador" class="primary" disabled>👁️ Visualizador</button></div>
+
+        <div class="cell wideCell">
+          <div class="synthNavWrap">
+            <button id="navUp" class="synthNavBtn" disabled>⬆</button>
+            <button id="navDown" class="synthNavBtn" disabled>⬇</button>
+            <div class="statsWrap">
+              <div class="statBox"><div class="label">Posesiones</div><div class="value" id="posBox">Pos 0-0</div></div>
+              <div class="statBox"><div class="label">Goles</div><div class="value" id="goalsBox">Goles 0-0</div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="timebox">
+      <div class="mono" style="font-size:18px">Tiempo: <span id="timeDisplay">00:00:00.00</span> / <span id="durDisplay">00:00:00.00</span></div>
+      <label class="small">Ir a:<input id="absTime" type="text" value="00:00:00.00"></label>
+      <label class="small">Antes:<input id="preDur" type="number" min="0" max="180" step="0.1" value="7"></label>
+      <label class="small">Después:<input id="postDur" type="number" min="0" max="180" step="0.1" value="5"></label>
+      <label class="small">TScore:<input id="tScore" type="number" min="1" step="1" value="60"></label>
+
+      <div class="metricRow">
+        <div class="miniMetricBox"><span class="small">EGen:</span><span class="metricValue" id="egenBox">0% - 0%</span></div>
+        <div class="miniMetricBox"><span class="small">EPos:</span><span class="metricValue" id="eposBox">0% - 0%</span></div>
+        <div class="miniMetricBox"><span class="small">FCon:</span><span class="metricValue" id="fconBox">0% - 0%</span></div>
+        <div class="miniMetricBox"><span class="small">E Con:</span><span class="metricValue" id="econBox">0% - 0%</span></div>
+        <div class="miniMetricBox"><span class="small">Rit:</span><span class="metricValue" id="ritBox">0</span></div>
+      </div>
+    </div>
+
+    <div class="panel" style="margin-top:10px">
+      <div class="small"><b>Selección actual</b></div>
+      <div class="row small" id="currentSelection" style="margin-top:6px"></div>
+      <div class="small" id="vizStatus" style="margin-top:8px"></div>
+    </div>
+
+    <div class="panel" style="margin-top:10px">
+      <div class="small"><b>Tabla de eventos</b></div>
+      <div class="tableWrap" style="margin-top:8px">
+        <table>
+          <thead><tr><th></th><th>Equipo</th><th>Resultado</th><th>Fase</th><th>Error</th><th>Tipo</th><th>Lado</th><th>Extra</th><th>timestamp</th></tr></thead>
+          <tbody id="eventsTbody"></tbody>
+        </table>
+      </div>
+
+      <div class="small" style="margin-top:10px"><b>Vista filtrada</b></div>
+      <div class="tableWrap" style="margin-top:8px">
+        <table>
+          <thead><tr><th>#</th><th>Equipo</th><th>Resultado</th><th>Fase</th><th>Error</th><th>Tipo</th><th>Lado</th><th>Extra</th><th>timestamp</th></tr></thead>
+          <tbody id="filteredTbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="panel" style="margin-top:10px">
+      <div class="small"><b>Diagnóstico</b></div>
+      <div class="log" id="diag"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+  const YOUTUBE_ID = "kONs8pA53jU";
+  const EVENTS = [{"Equipo":"MEX","Resultado":"","Fase":"","Error":"","Tipo":"","Lado":"Local","Extra":"","timestamp":"","timeSeconds":null},{"Equipo":"DOM","Resultado":"","Fase":"","Error":"","Tipo":"","Lado":"Visitante","Extra":"","timestamp":"","timeSeconds":null},{"Equipo":"DOM","Resultado":"No Gol","Fase":"Pos","Error":"Per","Tipo":"Pen","Lado":"Cen","Extra":"","timestamp":"00:00:31.62","timeSeconds":31.62},{"Equipo":"MEX","Resultado":"Gol","Fase":"Pos","Error":"","Tipo":"Pen","Lado":"Cen","Extra":"","timestamp":"00:01:03.05","timeSeconds":63.05},{"Equipo":"DOM","Resultado":"No Gol","Fase":"Pos","Error":"Per","Tipo":"","Lado":"Der","Extra":"","timestamp":"00:01:37.78","timeSeconds":97.78},{"Equipo":"MEX","Resultado":"Gol","Fase":"Pos","Error":"","Tipo":"Ext","Lado":"Izq","Extra":"","timestamp":"00:02:47.11","timeSeconds":167.11},{"Equipo":"DOM","Resultado":"Gol","Fase":"Pos","Error":"","Tipo":"Ext","Lado":"Der","Extra":"","timestamp":"00:04:11.06","timeSeconds":251.06},{"Equipo":"MEX","Resultado":"Gol","Fase":"Pos","Error":"","Tipo":"Dir","Lado":"Cen","Extra":"","timestamp":"00:04:50.53","timeSeconds":290.53},{"Equipo":"DOM","Resultado":"No Gol","Fase":"Pos","Error":"Fue","Tipo":"Lar","Lado":"Cen","Extra":"","timestamp":"00:05:50.68","timeSeconds":350.68},{"Equipo":"MEX","Resultado":"No Gol","Fase":"Pos","Error":"Par","Tipo":"Pen","Lado":"Der","Extra":"","timestamp":"00:06:15.88","timeSeconds":375.88},{"Equipo":"MEX","Resultado":"Gol","Fase":"Pos","Error":"","Tipo":"Lar","Lado":"Der","Extra":"","timestamp":"00:06:49.12","timeSeconds":409.12},{"Equipo":"DOM","Resultado":"Gol","Fase":"Pos","Error":"","Tipo":"Ext","Lado":"Der","Extra":"","timestamp":"00:08:11.06","timeSeconds":491.06},{"Equipo":"MEX","Resultado":"No Gol","Fase":"Pos","Error":"Per","Tipo":"Unf","Lado":"Cen","Extra":"","timestamp":"00:08:45.20","timeSeconds":525.2},{"Equipo":"DOM","Resultado":"No Gol","Fase":"Pos","Error":"Par","Tipo":"Pen","Lado":"Cen","Extra":"","timestamp":"00:09:02.49","timeSeconds":542.49},{"Equipo":"DOM","Resultado":"No Gol","Fase":"Pos","Error":"Per","Tipo":"Ext","Lado":"Izq","Extra":"","timestamp":"00:09:47.21","timeSeconds":587.21},{"Equipo":"MEX","Resultado":"No Gol","Fase":"Pos","Error":"Fue","Tipo":"Pen","Lado":"Izq","Extra":"","timestamp":"00:10:13.23","timeSeconds":613.23},{"Equipo":"DOM","Resultado":"Gol","Fase":"Pos","Error":"","Tipo":"Lar","Lado":"Cen","Extra":"","timestamp":"00:10:38.08","timeSeconds":638.08},{"Equipo":"MEX","Resultado":"No Gol","Fase":"Tra","Error":"Per","Tipo":"Dir","Lado":"","Extra":"","timestamp":"00:10:49.25","timeSeconds":649.25},{"Equipo":"DOM","Resultado":"Gol","Fase":"Pos","Error":"","Tipo":"Dir","Lado":"Cen","Extra":"","timestamp":"00:11:48.47","timeSeconds":708.47},{"Equipo":"MEX","Resultado":"No Gol","Fase":"Pos","Error":"Par","Tipo":"Dir","Lado":"Cen","Extra":"","timestamp":"00:12:40.59","timeSeconds":760.59},{"Equipo":"MEX","Resultado":"No Gol","Fase":"Pos","Error":"Per","Tipo":"Unf","Lado":"","Extra":"","timestamp":"00:13:07.95","timeSeconds":787.95},{"Equipo":"DOM","Resultado":"Gol","Fase":"Pos","Error":"","Tipo":"Piv","Lado":"Cen","Extra":"","timestamp":"00:13:44.97","timeSeconds":824.97},{"Equipo":"MEX","Resultado":"Gol","Fase":"","Error":"","Tipo":"Dir","Lado":"Cen","Extra":"","timestamp":"00:14:57.37","timeSeconds":897.37}];
+
+  let player = null;
+  let playerReady = false;
+  let playerCreated = false;
+  let vizRunning = false;
+  let vizAbort = false;
+  let currentHighlightedIndex = null;
+
+  const fields = ["Equipo","Resultado","Fase","Error","Tipo","Lado"];
+  const state = {Equipo:null,Resultado:null,Fase:null,Error:null,Tipo:null,Lado:null};
+  let cycles = {};
+  let teamLocal = "LOC";
+  let teamVis = "VIS";
+
+  const $ = id => document.getElementById(id);
+  const playBtn = $("play");
+  const pauseBtn = $("pause");
+  const stopBtn = $("stop");
+  const slowmoBtn = $("slowmo");
+  const rateSel = $("rate");
+  const visualizador = $("visualizador");
+  const resetTags = $("resetTags");
+  const navUp = $("navUp");
+  const navDown = $("navDown");
+  const eventsTbody = $("eventsTbody");
+  const filteredTbody = $("filteredTbody");
+  const diag = $("diag");
+
+  const btnByKey = {
+    Equipo:$("bEquipo"),
+    Resultado:$("bResultado"),
+    Fase:$("bFase"),
+    Error:$("bError"),
+    Tipo:$("bTipo"),
+    Lado:$("bLado")
+  };
+
+  function log(msg){ diag.textContent += msg + "\n"; }
+  function esc(v){return String(v??"").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;").replaceAll("'","&#039;")}
+  function clamp(n,a,b){return Math.max(a,Math.min(b,n))}
+  function pad2(n){n=Math.floor(Math.abs(n));return n<10?"0"+n:String(n)}
+  function normalizeTeam(v){return String(v||"").trim().toUpperCase().slice(0,3)}
+
+  function formatTime(t){
+    if(!Number.isFinite(t)||t<0)t=0;
+    const totalCent=Math.round(t*100);
+    const cent=totalCent%100;
+    const totalSec=(totalCent-cent)/100;
+    const s=totalSec%60;
+    const totalMin=(totalSec-s)/60;
+    const m=totalMin%60;
+    const h=(totalMin-m)/60;
+    return pad2(h)+":"+pad2(m)+":"+pad2(s)+"."+pad2(cent);
+  }
+
+  function parseTimeValue(value){
+    const s=String(value??"").trim().replace(",",".");
+    if(!s)return null;
+    let m=s.match(/^(\d{1,3}):(\d{1,2}):(\d{1,2})(?:\.(\d{1,3}))?$/);
+    if(m)return Number(m[1])*3600+Number(m[2])*60+Number(m[3])+Number("0."+(m[4]||"0"));
+    m=s.match(/^(\d{1,3}):(\d{1,2})(?:\.(\d{1,3}))?$/);
+    if(m)return Number(m[1])*60+Number(m[2])+Number("0."+(m[3]||"0"));
+    const n=Number(s);
+    return Number.isFinite(n)?n:null;
+  }
+
+  function hasEventContent(r){return ["Resultado","Fase","Error","Tipo","Lado","Extra"].some(k=>String(r[k]??"").trim()!=="")}
+  function isPlayableEvent(r){return r && Number.isFinite(Number(r.timeSeconds)) && hasEventContent(r)}
+
+  function getNow(){try{return Number(player?.getCurrentTime?.()||0)}catch(_){return 0}}
+  function getDur(){try{return Number(player?.getDuration?.()||0)}catch(_){return 0}}
+  function getPre(){const n=Number($("preDur").value);return Number.isFinite(n)&&n>=0?n:7}
+  function getPost(){const n=Number($("postDur").value);return Number.isFinite(n)&&n>=0?n:5}
+
+  function seekTo(t, play=false){
+    if(!playerReady||!player)return;
+    const d=getDur()||Infinity;
+    const target=clamp(Number(t)||0,0,d);
+    try{
+      player.seekTo(target,true);
+      if(play) player.playVideo();
+      updateTimeUI(true);
+    }catch(e){log("No se pudo saltar: "+e.message)}
+  }
+
+  function setPlaybackRate(r){
+    r=Number(r);
+    if(!Number.isFinite(r)||r<=0)r=1;
+    try{player?.setPlaybackRate?.(r)}catch(_){}
+    rateSel.value=String(r);
+  }
+
+  function unique(field){
+    const out=[];
+    for(const r of EVENTS){
+      const v=String(r[field]??"").trim();
+      if(v && !out.includes(v)) out.push(v);
+    }
+    return out;
+  }
+
+  function buildCycles(){
+    const teams=unique("Equipo").map(normalizeTeam).filter(Boolean);
+    teamLocal=teams[0]||"LOC";
+    teamVis=teams[1]||"VIS";
+    cycles={
+      Equipo:[null,...teams],
+      Resultado:[null,...unique("Resultado")],
+      Fase:[null,...unique("Fase")],
+      Error:[null,...unique("Error")],
+      Tipo:[null,...unique("Tipo")],
+      Lado:[null,...unique("Lado")]
+    };
+  }
+
+  function fmtVal(v){return v==null||v===""?"—":String(v)}
+
+  function renderSelection(){
+    for(const k of fields){
+      btnByKey[k].textContent = k + ": " + fmtVal(state[k]);
+      btnByKey[k].classList.toggle("sel", !!state[k]);
+    }
+    $("currentSelection").innerHTML = fields.map(k => '<span class="pill">'+k+': <b>'+esc(fmtVal(state[k]))+'</b></span>').join("");
+  }
+
+  function nextInCycle(key){
+    if(vizRunning)return;
+    const arr=cycles[key]||[null];
+    const idx=arr.indexOf(state[key]);
+    state[key]=arr[(idx+1)%arr.length];
+    renderSelection();
+    renderFilteredTable();
+    updateCurrentEventHighlight(true);
+  }
+
+  function resetFilters(){
+    for(const k of fields) state[k]=null;
+    renderSelection();
+    renderFilteredTable();
+    updateCurrentEventHighlight(true);
+  }
+
+  function matchesFilter(r){
+    for(const k of fields){
+      if(state[k]!=null && String(r[k]??"")!==String(state[k])) return false;
+    }
+    return true;
+  }
+
+  function hasAnyFilter(){return fields.some(k => state[k] != null)}
+
+  function getFiltered(playableOnly=false){
+    return EVENTS.map((r,i)=>({...r,_idx:i})).filter(r => matchesFilter(r) && (!playableOnly || isPlayableEvent(r)));
+  }
+
+  function getPlayableList(){
+    const base = hasAnyFilter() ? getFiltered(true) : EVENTS.map((r,i)=>({...r,_idx:i})).filter(isPlayableEvent);
+    return base.sort((a,b)=>Number(a.timeSeconds)-Number(b.timeSeconds));
+  }
+
+  function renderEventsTable(){
+    eventsTbody.textContent="";
+    EVENTS.forEach((r,i)=>{
+      const playable=isPlayableEvent(r);
+      const tr=document.createElement("tr");
+      tr.dataset.rowIndex=String(i);
+      if(playable)tr.classList.add("clickableRow");
+      tr.innerHTML=`
+        <td><button class="playRowBtn" data-play-index="${i}" ${playable?"":"disabled"}>▶</button></td>
+        <td>${esc(r.Equipo)}</td><td>${esc(r.Resultado)}</td><td>${esc(r.Fase)}</td><td>${esc(r.Error)}</td>
+        <td>${esc(r.Tipo)}</td><td>${esc(r.Lado)}</td><td>${esc(r.Extra)}</td><td class="mono">${esc(r.timestamp)}</td>
+      `;
+      eventsTbody.appendChild(tr);
+    });
+  }
+
+  function renderFilteredTable(){
+    const list=getFiltered(false);
+    filteredTbody.textContent="";
+    list.forEach((r,n)=>{
+      const tr=document.createElement("tr");
+      tr.dataset.rowIndex=String(r._idx);
+      if(isPlayableEvent(r))tr.classList.add("clickableRow");
+      tr.innerHTML=`
+        <td class="mono">${n+1}</td>
+        <td>${esc(r.Equipo)}</td><td>${esc(r.Resultado)}</td><td>${esc(r.Fase)}</td><td>${esc(r.Error)}</td>
+        <td>${esc(r.Tipo)}</td><td>${esc(r.Lado)}</td><td>${esc(r.Extra)}</td><td class="mono">${esc(r.timestamp)}</td>
+      `;
+      filteredTbody.appendChild(tr);
+    });
+    $("vizStatus").textContent = getFiltered(true).length + " eventos reproducibles con el filtro actual.";
+  }
+
+  function goToEventByIndex(idx, play=false){
+    const r=EVENTS[idx];
+    if(!isPlayableEvent(r))return;
+    seekTo(Math.max(0,Number(r.timeSeconds)-getPre()), play);
+  }
+
+  eventsTbody.addEventListener("click",e=>{
+    const btn=e.target.closest("button[data-play-index]");
+    if(!btn)return;
+    goToEventByIndex(Number(btn.dataset.playIndex), false);
+  });
+
+  filteredTbody.addEventListener("click",e=>{
+    const tr=e.target.closest("tr[data-row-index]");
+    if(!tr)return;
+    goToEventByIndex(Number(tr.dataset.rowIndex), false);
+  });
+
+  function updateStats(){
+    let posL=0,posV=0,golL=0,golV=0,posPhaseL=0,posPhaseV=0,golPosL=0,golPosV=0,traL=0,traV=0,golTraL=0,golTraV=0;
+
+    for(const r of EVENTS){
+      const team=normalizeTeam(r.Equipo);
+      const res=String(r.Resultado||"").trim().toUpperCase();
+      const fase=String(r.Fase||"").trim().toUpperCase();
+      const possession=res==="GOL"||res==="NO GOL";
+      const goal=res==="GOL";
+
+      if(team===teamLocal){
+        if(possession)posL++;
+        if(goal)golL++;
+        if(fase==="POS"&&possession)posPhaseL++;
+        if(fase==="POS"&&goal)golPosL++;
+        if(fase==="TRA"&&possession)traL++;
+        if(fase==="TRA"&&goal)golTraL++;
+      }
+      if(team===teamVis){
+        if(possession)posV++;
+        if(goal)golV++;
+        if(fase==="POS"&&possession)posPhaseV++;
+        if(fase==="POS"&&goal)golPosV++;
+        if(fase==="TRA"&&possession)traV++;
+        if(fase==="TRA"&&goal)golTraV++;
+      }
+    }
+
+    const pct=(a,b)=>b>0 ? Math.round(a/b*100)+"%" : "0%";
+    const total=posL+posV;
+    const tscore=Math.max(1,Number($("tScore").value)||60);
+
+    $("teamsDisplay").textContent=teamLocal+" - "+teamVis;
+    $("posBox").textContent="Pos "+posL+"-"+posV;
+    $("goalsBox").textContent="Goles "+golL+"-"+golV;
+    $("egenBox").textContent=pct(golL,posL)+" - "+pct(golV,posV);
+    $("eposBox").textContent=pct(golPosL,posPhaseL)+" - "+pct(golPosV,posPhaseV);
+    $("fconBox").textContent=pct(traL,total)+" - "+pct(traV,total);
+    $("econBox").textContent=pct(golTraL,traL)+" - "+pct(golTraV,traV);
+    $("ritBox").textContent=String(Math.round(total/tscore*30));
+  }
+
+  function findCurrentEventPos(){
+    const list=getPlayableList();
+    if(!list.length)return {list,pos:-1};
+    const tRef=getNow()+getPre()+0.03;
+    let pos=-1;
+    for(let i=0;i<list.length;i++){
+      if(Number(list[i].timeSeconds)<=tRef)pos=i;
+      else break;
+    }
+    if(pos<0)pos=0;
+    return {list,pos};
+  }
+
+  function updateCurrentEventHighlight(force=false){
+    const {list,pos}=findCurrentEventPos();
+    const idx=pos>=0 && list[pos] ? list[pos]._idx : null;
+    if(!force && idx===currentHighlightedIndex)return;
+
+    document.querySelectorAll("tr.currentEvent").forEach(tr=>tr.classList.remove("currentEvent"));
+    if(idx!=null){
+      eventsTbody.querySelector('tr[data-row-index="'+idx+'"]')?.classList.add("currentEvent");
+      filteredTbody.querySelectorAll('tr[data-row-index="'+idx+'"]').forEach(tr=>tr.classList.add("currentEvent"));
+    }
+    currentHighlightedIndex=idx;
+  }
+
+  function jumpNav(offset){
+    const {list,pos}=findCurrentEventPos();
+    if(!list.length||pos<0)return;
+    const next=clamp(pos+offset,0,list.length-1);
+    seekTo(Math.max(0,Number(list[next].timeSeconds)-getPre()), false);
+  }
+
+  function sleep(ms){ return new Promise(r=>setTimeout(r,ms)); }
+
+  async function playSegment(start,end){
+    start=Math.max(0,start);
+    end=Math.max(start,end);
+    seekTo(start,false);
+    await sleep(180);
+    try{player.mute();player.playVideo()}catch(_){}
+    await sleep(120);
+    try{
+      if(player.getPlayerState && player.getPlayerState()!==YT.PlayerState.PLAYING){
+        player.mute();
+        player.playVideo();
+      }
+    }catch(_){}
+
+    $("vizStatus").textContent="Reproduciendo: "+formatTime(start)+" → "+formatTime(end);
+
+    return new Promise(resolve=>{
+      const tick=()=>{
+        if(vizAbort){
+          try{player.pauseVideo()}catch(_){}
+          resolve();
+          return;
+        }
+        if(getNow()>=end-0.03){
+          try{player.pauseVideo()}catch(_){}
+          resolve();
+          return;
+        }
+        requestAnimationFrame(tick);
+      };
+      tick();
+    });
+  }
+
+  async function runVisualizer(){
+    const list=getFiltered(true).sort((a,b)=>Number(a.timeSeconds)-Number(b.timeSeconds));
+    if(!playerReady){alert("YouTube todavía no está listo.");return}
+    if(!list.length){alert("No hay eventos reproducibles con este filtro.");return}
+
+    vizRunning=true;
+    vizAbort=false;
+    visualizador.classList.add("running");
+    visualizador.textContent="⏹️ Parar visualizador";
+
+    for(const r of list){
+      if(vizAbort)break;
+      await playSegment(Number(r.timeSeconds)-getPre(), Number(r.timeSeconds)+getPost());
+      await sleep(120);
+    }
+
+    vizRunning=false;
+    vizAbort=false;
+    visualizador.classList.remove("running");
+    visualizador.textContent="👁️ Visualizador";
+    $("vizStatus").textContent="Listo.";
+  }
+
+  function updateTimeUI(force=false){
+    const t=getNow();
+    const d=getDur();
+    $("timeDisplay").textContent=formatTime(t);
+    $("durDisplay").textContent=formatTime(d);
+    if(document.activeElement !== $("absTime")) $("absTime").value=formatTime(t);
+    updateCurrentEventHighlight(force);
+  }
+
+  function applyAbsTime(){
+    const t=parseTimeValue($("absTime").value);
+    if(t==null){
+      alert("Formato inválido. Usa HH:MM:SS.CC");
+      $("absTime").value=formatTime(getNow());
+      return;
+    }
+    seekTo(t,false);
+  }
+
+  function enableControls(on){
+    [playBtn,pauseBtn,stopBtn,slowmoBtn,rateSel,visualizador,navUp,navDown,resetTags,$("preDur"),$("postDur"),$("tScore"),$("absTime")]
+      .forEach(el=>el.disabled=!on);
+    for(const k of fields) btnByKey[k].disabled=!on;
+  }
+
+  function createPlayer(){
+    if(playerCreated)return;
+    if(!(window.YT && window.YT.Player))return;
+    playerCreated=true;
+
+    player=new YT.Player("ytPlayer",{
+      videoId:YOUTUBE_ID,
+      playerVars:{rel:0,modestbranding:1,playsinline:1,enablejsapi:1,autoplay:0,mute:1},
+      events:{
+        onReady:()=>{
+          playerReady=true;
+          try{player.mute()}catch(_){}
+          enableControls(true);
+          updateTimeUI(true);
+          log("YouTube listo.");
+        },
+        onStateChange:()=>updateTimeUI(true),
+        onError:e=>log("Error YouTube: "+(e?.data ?? "desconocido")+". Quizá el vídeo no permite inserción.")
+      }
+    });
+  }
+
+  function loadYoutubeApi(){
+    window.onYouTubeIframeAPIReady=createPlayer;
+    if(window.YT && window.YT.Player){createPlayer();return}
+    const tag=document.createElement("script");
+    tag.src="https://www.youtube.com/iframe_api";
+    tag.async=true;
+    document.head.appendChild(tag);
+  }
+
+  playBtn.addEventListener("click",()=>{try{player.playVideo()}catch(_){}});
+  pauseBtn.addEventListener("click",()=>{try{player.pauseVideo()}catch(_){}});
+  stopBtn.addEventListener("click",()=>{try{player.pauseVideo();player.seekTo(0,true)}catch(_){}});
+  slowmoBtn.addEventListener("click",()=>setPlaybackRate(0.5));
+  rateSel.addEventListener("change",()=>setPlaybackRate(rateSel.value));
+  visualizador.addEventListener("click",async()=>{ if(vizRunning) vizAbort=true; else await runVisualizer(); });
+  resetTags.addEventListener("click",resetFilters);
+  navUp.addEventListener("click",()=>jumpNav(-1));
+  navDown.addEventListener("click",()=>jumpNav(1));
+  $("tScore").addEventListener("input",updateStats);
+  $("preDur").addEventListener("input",()=>updateCurrentEventHighlight(true));
+  $("absTime").addEventListener("keydown",e=>{if(e.key==="Enter"){e.preventDefault();applyAbsTime();}});
+  $("absTime").addEventListener("blur",applyAbsTime);
+
+  for(const k of fields){btnByKey[k].addEventListener("click",()=>nextInCycle(k));}
+
+  enableControls(false);
+  buildCycles();
+  renderSelection();
+  renderEventsTable();
+  renderFilteredTable();
+  updateStats();
+  log("Eventos incrustados: "+EVENTS.length);
+  log("Eventos reproducibles: "+EVENTS.filter(isPlayableEvent).length);
+  loadYoutubeApi();
+
+  const tick=()=>{updateTimeUI(false);requestAnimationFrame(tick)};
+  tick();
+})();
+</script>
+</body>
+</html>
